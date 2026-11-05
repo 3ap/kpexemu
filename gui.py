@@ -5,6 +5,9 @@
 
 Prepare the disk image with resources once:  python3 tools/mkdisk.py gmp-m6.rom disk.img
 
+With --sync-folder DIR the player's files live in a normal folder: it is copied to
+the disk image on start and the player's changes are copied back on exit.
+
 Controls (see KEYS):
     arrows         - directions (left 1, right 2, up 9, down 8)
     Enter          - OK / open the selected item (code 13)
@@ -21,7 +24,7 @@ Controls (see KEYS):
 import argparse
 import time
 
-from kpex import sdl
+from kpex import fat16, sdl
 from kpex.machine import Machine
 from kpex.lcd import PANEL_W, PANEL_H
 
@@ -58,9 +61,23 @@ def main():
     ap.add_argument('--disk', default='disk.img')
     ap.add_argument('--scale', type=int, default=3)
     ap.add_argument('--verbose', action='store_true', help='print the peripheral log')
+    ap.add_argument('--sync-folder', metavar='DIR',
+                    help='keep the player files in this folder: copied to the disk on start, back on exit')
+    ap.add_argument('--max-instructions', type=lambda v: int(float(v)), metavar='N',
+                    help='quit normally after N instructions (for testing)')
     args = ap.parse_args()
 
+    imported = fat16.import_folder(args.disk, args.sync_folder) if args.sync_folder else None
     m = Machine(args.rom, disk_path=args.disk, log=print if args.verbose else (lambda s: None))
+    try:
+        run_window(m, args)
+    finally:
+        if args.sync_folder:
+            m.disk.file.flush()
+            fat16.export_folder(args.disk, args.sync_folder, imported)
+
+
+def run_window(m, args):
     win = sdl.Window('K-PEX', PANEL_H, PANEL_W, scale=args.scale)
 
     pressed = []          # codes of pressed ADC buttons, the last one wins
@@ -78,6 +95,8 @@ def main():
     running = True
     while running:
         m.run(CHUNK)
+        if args.max_instructions and m.cpu.cycles >= args.max_instructions:
+            break
         for code, when in list(release_at.items()):
             if m.cpu.cycles >= when:
                 del release_at[code]

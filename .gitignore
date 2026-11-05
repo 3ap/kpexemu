@@ -1,0 +1,14 @@
+# Whitelist: only source code and documentation go into the repository.
+# Firmware, disk images, resources, archives and screenshots are ignored.
+*
+!*/
+!.gitignore
+!*.py
+!*.md
+!docs/**
+
+# Folders with firmware and resources, whatever they contain
+firmware/
+resources/
+games/
+__pycache__/

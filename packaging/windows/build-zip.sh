@@ -28,6 +28,11 @@ unzip -q "$downloads/pypy.zip" -d "$out"
 mv "$out/$PYPY_NAME" "$out/pypy"
 unzip -q "$downloads/sdl.zip" SDL2.dll README-SDL.txt -d "$out"
 
+# Empty folders for the user's files (see --sync-folder in gui.py)
+for d in MUSIC PHOTO TEXT GAME VIDEO RECORD; do
+    mkdir -p "$out/player-files/$d"
+done
+
 rm -f "$output"
 (cd "$work" && zip -qr9 "$output" kpex-emulator)
 echo "built $output ($(du -h "$output" | cut -f1))"

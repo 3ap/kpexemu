@@ -2,6 +2,8 @@
 rem Starts the Kingston K-PEX emulator.
 rem Put the firmware (KPEX100.rom or gmp-m6.rom) next to this file and run it.
 rem On first start a disk image disk-<firmware name>.img is created.
+rem Your music, photos, texts and games go into the player-files folder:
+rem it is copied to the player on start, and the player's changes come back on exit.
 
 setlocal
 cd /d "%~dp0"
@@ -27,7 +29,9 @@ if not exist "%DISK%" (
 )
 
 echo Starting the emulator with %ROM% and %DISK% ...
-"%~dp0pypy\pypy3.exe" gui.py "%ROM%" --disk "%DISK%" %*
+echo Files for the player go into the player-files folder. Close the emulator
+echo window (or press Esc) to save the player's changes back to that folder.
+"%~dp0pypy\pypy3.exe" gui.py "%ROM%" --disk "%DISK%" --sync-folder player-files %*
 if errorlevel 1 goto error
 exit /b 0
 

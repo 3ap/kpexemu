@@ -9,6 +9,26 @@ An emulator of the Kingston K-PEX MP3 player. It runs the original firmware
 - The SDL2 library. On Fedora it is the `sdl2-compat` package.
 - A firmware file, e.g. `gmp-m6.rom`.
 
+### Firmware
+
+The firmware is not included. Look for it in the Web Archive copy of the old
+Kingston site (the support section for K-PEX), or on the Cenix site: Cenix
+published all firmware versions from 1.00 to 2.21.
+
+### Windows
+
+A ready-to-run archive for Windows is in
+[Releases](https://github.com/3ap/kpexemu/releases/tag/latest):
+`kpex-emulator-windows.zip`, rebuilt on every push to master. It already
+contains PyPy and SDL2.
+
+1. Unpack the archive.
+2. Put the firmware (`KPEX100.rom` or `gmp-m6.rom`) next to `run-kpex.bat`.
+3. Run `run-kpex.bat`. On first start it creates a disk image for that firmware.
+
+`mcopy` (mtools) is usually not available on Windows, so copying your own files
+to the disk image is not covered yet.
+
 ## Running
 
 Prepare a disk image once: the firmware loads its pictures and fonts from it.

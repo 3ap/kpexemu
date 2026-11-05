@@ -4,6 +4,8 @@ cffi is built into PyPy and is fast there; SDL2 itself comes from the system
 (on Fedora, the sdl2-compat package). Nothing needs to be compiled.
 """
 
+import os
+
 import cffi
 
 ffi = cffi.FFI()
@@ -36,9 +38,28 @@ K_RETURN, K_ESCAPE, K_BACKSPACE, K_SPACE = 13, 27, 8, 32
 K_RIGHT, K_LEFT, K_DOWN, K_UP = 0x4000004F, 0x40000050, 0x40000051, 0x40000052
 
 
+# Library names to try: Windows, Linux, macOS. A copy next to the project
+# (e.g. SDL2.dll on Windows) takes priority over the system one.
+PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+LIBRARY_NAMES = ['SDL2.dll', 'libSDL2-2.0.so.0', 'libSDL2.so', 'libSDL2-2.0.0.dylib', 'libSDL2.dylib']
+
+
+def load_sdl():
+    candidates = [os.path.join(PROJECT_DIR, name) for name in LIBRARY_NAMES] + LIBRARY_NAMES
+    for name in candidates:
+        if os.sep in name and not os.path.exists(name):
+            continue
+        try:
+            return ffi.dlopen(name)
+        except OSError:
+            pass
+    raise RuntimeError('SDL2 library not found. Install SDL2, or on Windows put SDL2.dll '
+                       f'next to gui.py ({PROJECT_DIR}).')
+
+
 class Window:
     def __init__(self, title, width, height, scale=2):
-        self.sdl = ffi.dlopen('libSDL2-2.0.so.0')
+        self.sdl = load_sdl()
         if self.sdl.SDL_Init(INIT_VIDEO) != 0:
             raise RuntimeError(ffi.string(self.sdl.SDL_GetError()).decode())
         self.width, self.height = width, height

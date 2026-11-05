@@ -24,10 +24,14 @@ contains PyPy and SDL2.
 
 1. Unpack the archive.
 2. Put the firmware (`KPEX100.rom` or `gmp-m6.rom`) next to `run-kpex.bat`.
-3. Run `run-kpex.bat`. On first start it creates a disk image for that firmware.
+3. Put your music, photos, texts and games into the matching subfolders of
+   `player-files` (MUSIC, PHOTO, TEXT, GAME...).
+4. Run `run-kpex.bat`. On first start it creates a disk image for that firmware.
 
-`mcopy` (mtools) is usually not available on Windows, so copying your own files
-to the disk image is not covered yet.
+The player sees the files from `player-files`. When you close the emulator
+window (or press Esc), everything the player created or changed (game saves,
+recordings, settings) is copied back to `player-files`, and files deleted on the
+player are deleted there too. Add or remove files while the emulator is closed.
 
 ## Running
 
@@ -47,9 +51,21 @@ The main menu appears after about 15-20 seconds.
 
 ## Your own files
 
-`disk.img` is the player's disk with a FAT16 filesystem. Copy files to it with
-`mcopy` from mtools (the partition starts at byte offset 15872). Close the
-emulator first.
+The easiest way is a sync folder, the same as in the Windows archive:
+
+```
+pypy3 gui.py gmp-m6.rom --disk disk.img --sync-folder player-files
+```
+
+On start the contents of `player-files` are copied to the player's disk, and on
+exit the player's changes are copied back. A file you change in the folder while
+the emulator runs is never overwritten.
+
+You can also work with the disk image directly. `disk.img` is the player's disk
+with a FAT16 filesystem; copy files to it with `mcopy` from mtools (the
+partition starts at byte offset 15872). Close the emulator first. Do not mix the
+two ways: with `--sync-folder` the disk is rebuilt from the folder on every start,
+so files copied into the image directly would be lost.
 
 ```
 mcopy -i disk.img@@15872 song.mp3 ::/MUSIC/

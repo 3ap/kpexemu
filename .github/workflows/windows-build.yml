@@ -1,0 +1,75 @@
+# On every push to master, builds a ready-to-run Windows zip
+# (PyPy + SDL2 + emulator + run-kpex.bat) and publishes it as the "latest" pre-release.
+#
+# Kept cheap on purpose:
+# - runs on Linux (Windows runners cost 2x minutes); nothing here needs Windows;
+# - a single job (every job is billed rounded up to a whole minute);
+# - a newer push cancels a build that is still running;
+# - PyPy and SDL2 downloads are cached.
+
+name: Windows build
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:           # manual run from the Actions tab
+
+permissions:
+  contents: write              # to move the "latest" tag and update the release
+
+concurrency:
+  group: windows-build
+  cancel-in-progress: true
+
+env:
+  PYPY_NAME: pypy3.11-v8.0.1-win64
+  PYPY_SHA256: cba5f9e9543c679ea5d31b6c81b7a6667d836e3c18bf3eb6cb8c72147f829896
+  SDL_VERSION: 2.32.10
+  SDL_SHA256: 6cf9706eefd0a4a06dc764007934d428afaf029fabdd408a9e646048c91e18fb
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check that the Python sources compile
+        run: python3 -m compileall -q gui.py run.py kpex tools
+
+      - name: Cache PyPy and SDL2 downloads
+        uses: actions/cache@v4
+        with:
+          path: downloads
+          key: windows-deps-${{ env.PYPY_NAME }}-sdl-${{ env.SDL_VERSION }}
+
+      - name: Download PyPy and SDL2
+        run: |
+          mkdir -p downloads
+          cd downloads
+          [ -f pypy.zip ] || curl -fsSL -o pypy.zip "https://downloads.python.org/pypy/${PYPY_NAME}.zip"
+          [ -f sdl.zip ] || curl -fsSL -o sdl.zip \
+            "https://github.com/libsdl-org/SDL/releases/download/release-${SDL_VERSION}/SDL2-${SDL_VERSION}-win32-x64.zip"
+          echo "${PYPY_SHA256}  pypy.zip" | sha256sum -c -
+          echo "${SDL_SHA256}  sdl.zip" | sha256sum -c -
+
+      - name: Build the zip
+        run: packaging/windows/build-zip.sh downloads kpex-emulator-windows.zip
+
+      - name: Publish the "latest" release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git tag -f latest
+          git push -f origin refs/tags/latest
+          notes="Automatic Windows build of ${GITHUB_SHA::7} ($(date -u +%Y-%m-%d)).
+
+          Unpack the zip, put KPEX100.rom or gmp-m6.rom next to run-kpex.bat and run run-kpex.bat.
+          Includes PyPy (${PYPY_NAME}) and SDL2 ${SDL_VERSION}."
+          if gh release view latest > /dev/null 2>&1; then
+            gh release upload latest kpex-emulator-windows.zip --clobber
+            gh release edit latest --prerelease --title "Latest build" --notes "$notes"
+          else
+            gh release create latest kpex-emulator-windows.zip --prerelease \
+              --title "Latest build" --notes "$notes"
+          fi

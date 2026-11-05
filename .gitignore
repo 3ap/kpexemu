@@ -6,6 +6,8 @@
 !*.py
 !*.md
 !docs/**
+!.github/**
+!packaging/**
 
 # Folders with firmware and resources, whatever they contain
 firmware/

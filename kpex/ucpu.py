@@ -101,13 +101,10 @@ class UnicornCPU:
                 w16(off, val)
             else:
                 w8(off, val)
-            # The device may have raised an interrupt line (or the firmware has
-            # just unmasked one): stop to take it without delay.
-            if self.irq_line or self.fiq_line:
-                uc = self.uc
-                cpsr = uc.reg_read(A.UC_ARM_REG_CPSR)
-                if (self.fiq_line and not cpsr & 0x40) or (self.irq_line and not cpsr & 0x80):
-                    uc.emu_stop()
+            # No emu_stop() here even if an interrupt became pending: Unicorn
+            # cannot tell how many instructions ran before a stop, and
+            # counting the whole slice makes the timers outrun the CPU. The
+            # interrupt is taken at the end of the slice instead.
 
         # The busiest ports are served by C code (kpex/native) without Python.
         fast = None

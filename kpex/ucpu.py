@@ -189,15 +189,19 @@ class UnicornCPU:
     # --- main loop ---------------------------------------------------------------
 
     def run(self, count):
-        """Run up to `count` instructions. Returns the number executed
-        (approximately, if the run stopped early)."""
+        """Run `count` instructions (Unicorn counts them exactly). Returns the number."""
         uc = self.uc
         if self.fiq_line or self.irq_line:
+            # Interrupts are only checked here, between runs. If both are
+            # pending, enter IRQ and then FIQ on top of it (IRQ entry leaves
+            # F alone): the FIQ handler runs first and returns straight into
+            # the IRQ handler, as on the real CPU. Taking only the FIQ would
+            # starve the IRQ when FIQs come every run (audio).
             cpsr = uc.reg_read(A.UC_ARM_REG_CPSR)
+            if self.irq_line and not cpsr & 0x80:
+                self._interrupt(VEC_IRQ, IRQ)
             if self.fiq_line and not cpsr & 0x40:
                 self._interrupt(VEC_FIQ, FIQ)
-            elif self.irq_line and not cpsr & 0x80:
-                self._interrupt(VEC_IRQ, IRQ)
         if self.halted:
             return 0
         pc = uc.reg_read(A.UC_ARM_REG_PC)

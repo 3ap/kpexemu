@@ -14,7 +14,12 @@ SDRAM_SIZE = 16 << 20      # Hynix HY57V281620: 128 Mbit = 16 MB
 SDRAM_WINDOW = 256 << 20   # SDRAM address window; memory repeats in it (mirrors) since the upper address lines are not connected
 SRAM_SIZE = 64 << 10       # TCC767 internal memory at address 0 (the size is a guess)
 
-CPU_HZ = 120_000_000       # nominal clock: used to convert cycles to time
+# Time in the emulator is measured by the timers. On TCC77x they run from the
+# 12 MHz crystal XIN (Rockbox: TIMER_FREQ), so TIMER_HZ timer clocks are one
+# second of player time. How many instructions the CPU runs per timer clock is
+# `cpu_ratio`: the real player does more like 5-10 (CPU at up to 120 MHz),
+# but every extra instruction costs host speed.
+TIMER_HZ = 12_000_000
 
 
 def parse_rom_header(data):
@@ -35,7 +40,7 @@ def parse_rom_header(data):
 
 
 class Machine:
-    def __init__(self, rom_path, disk_path='disk.img', log=print, core='python'):
+    def __init__(self, rom_path, disk_path='disk.img', log=print, core='python', cpu_ratio=1):
         self.log = log
         self.bus = Bus(log=log)
         if core == 'unicorn':
@@ -56,6 +61,8 @@ class Machine:
 
         self.intc = P.InterruptController(self.cpu)
         self.timers = P.Timers(self)
+        self.timers.TICK_CYCLES = cpu_ratio
+        self.cpu_ratio = cpu_ratio
         self.adc = P.ADC()
         self.gpio = P.GPIO()
         self.powered_off = None   # reason, if the firmware cut the power
@@ -84,6 +91,11 @@ class Machine:
         cpu = self.cpu
         cpu.set_cpsr(0xD3)          # SVC mode, IRQ and FIQ disabled
         cpu.next_pc = ROM_BASE      # the boot loader jumps to the start of the firmware
+
+    @property
+    def player_seconds(self):
+        """Player time passed since reset, by the timers."""
+        return self.cpu.cycles / (self.cpu_ratio * TIMER_HZ)
 
     def _power_off(self, gpio, reason):
         cpu = self.cpu

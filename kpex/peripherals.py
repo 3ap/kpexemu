@@ -118,9 +118,9 @@ class Timers:
     32-bit counter TC32. All timers raise the shared TIMER0 interrupt (bit 6)
     and their own bit in TIREQ.
 
-    The exact timer frequency depends on divider settings we do not model
-    yet: we assume every timer ticks once per `TICK_CYCLES` CPU cycles
-    divided by the selected prescaler."""
+    The timers count the 12 MHz crystal clock divided by the selected
+    prescaler; one crystal clock is `TICK_CYCLES` CPU instructions
+    (Machine's `cpu_ratio`)."""
 
     TICK_CYCLES = 1
 
@@ -135,6 +135,7 @@ class Timers:
         self.tc32_ldv = 0
         self.tc32_cnt = 0
         self.frac = [0.0] * 6
+        self.tc32_frac = 0.0
 
     # TCFG: bit 0 - enabled, bit 3 - interrupt enable, bits 6:4 - divider
     DIVIDERS = [2, 4, 8, 16, 32, 1024, 4096, 1]
@@ -159,7 +160,10 @@ class Timers:
                     self.machine.intc.raise_irq(6)
             self.cnt[n] = cnt
         if self.tc32_en & (1 << 24):
-            self.tc32_cnt = (self.tc32_cnt + cycles) & 0xFFFFFFFF
+            self.tc32_frac += cycles / self.TICK_CYCLES
+            steps = int(self.tc32_frac)
+            self.tc32_frac -= steps
+            self.tc32_cnt = (self.tc32_cnt + steps) & 0xFFFFFFFF
 
     def read(self, off):
         if off < 0x60:

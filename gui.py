@@ -25,7 +25,7 @@ import argparse
 import time
 
 from kpex import fat16, sdl
-from kpex.machine import Machine
+from kpex.machine import Machine, TIMER_HZ
 from kpex.lcd import PANEL_W, PANEL_H
 
 # ADC channel 0 value for each button. The firmware turns it into a button code
@@ -49,10 +49,10 @@ KEYS = {
 
 FRAME_TIME = 1 / 30      # how often to refresh the window
 CHUNK = 100_000          # instructions to run between window checks
-# The firmware polls the buttons on a timer, and the emulator is slower than the
-# real player: a short key press could end before the firmware sees it.
-# So a button stays pressed for at least this many instructions (~0.2 s under PyPy).
-MIN_HOLD = 2_000_000
+# The firmware polls the buttons on a timer; when the emulator is slower than
+# the real player, a short key press could end before the firmware sees it.
+# So a button stays pressed for at least this much player time.
+MIN_HOLD_SECONDS = 0.2
 
 
 def main():
@@ -61,6 +61,11 @@ def main():
     ap.add_argument('--disk', default='disk.img')
     ap.add_argument('--scale', type=int, default=3)
     ap.add_argument('--verbose', action='store_true', help='print the peripheral log')
+    ap.add_argument('--cpu-ratio', type=float, default=1, metavar='K',
+                    help='CPU instructions per 12 MHz timer clock (default 1; the real player '
+                         'is probably 5-10, which needs a faster core)')
+    ap.add_argument('--unlimited', action='store_true',
+                    help='run as fast as possible instead of at the speed of the real player')
     ap.add_argument('--core', choices=('python', 'unicorn'), default='python',
                     help='CPU core: our Python interpreter or Unicorn Engine (JIT, needs `pip install unicorn` and a C compiler)')
     ap.add_argument('--sync-folder', metavar='DIR',
@@ -70,7 +75,7 @@ def main():
     args = ap.parse_args()
 
     imported = fat16.import_folder(args.disk, args.sync_folder) if args.sync_folder else None
-    m = Machine(args.rom, disk_path=args.disk, log=print if args.verbose else (lambda s: None), core=args.core)
+    m = Machine(args.rom, disk_path=args.disk, log=print if args.verbose else (lambda s: None), core=args.core, cpu_ratio=args.cpu_ratio)
     try:
         run_window(m, args)
     finally:
@@ -89,7 +94,11 @@ def run_window(m, args):
     shot = 0
     shown_frame = -1
     last_present = last_title = time.time()
-    last_cycles = 0
+    last_player_time = 0.0
+    min_hold = int(MIN_HOLD_SECONDS * m.cpu_ratio * TIMER_HZ)
+    # Wall-clock moment that corresponds to player time 0. When the emulator
+    # falls behind, it moves forward: we do not try to catch up afterwards.
+    origin = time.time()
 
     def update_adc():
         m.adc.channels[0] = ADC_FOR_CODE[pressed[-1]] if pressed else NO_KEY
@@ -97,6 +106,12 @@ def run_window(m, args):
     running = True
     while running:
         m.run(CHUNK)
+        if not args.unlimited:
+            ahead = m.player_seconds - (time.time() - origin)
+            if ahead > 0.002:
+                time.sleep(ahead)
+            elif ahead < -0.1:
+                origin -= ahead
         if args.max_instructions and m.cpu.cycles >= args.max_instructions:
             break
         for code, when in list(release_at.items()):
@@ -127,7 +142,7 @@ def run_window(m, args):
                         pressed_at[code] = m.cpu.cycles
                         update_adc()
                     elif code in pressed:
-                        release_at[code] = max(m.cpu.cycles, pressed_at[code] + MIN_HOLD)
+                        release_at[code] = max(m.cpu.cycles, pressed_at[code] + min_hold)
                 elif key == ord('p'):
                     if down:
                         print('button: power')
@@ -148,9 +163,11 @@ def run_window(m, args):
             win.show(m.lcd.landscape_565())
 
         if now - last_title >= 1:
-            mips = (m.cpu.cycles - last_cycles) / (now - last_title) / 1e6
-            last_title, last_cycles = now, m.cpu.cycles
-            win.set_title(f'K-PEX - {mips:.1f} MIPS, {m.cpu.cycles / 1e6:.0f}M instructions total'
+            speed = (m.player_seconds - last_player_time) / (now - last_title)
+            mips = speed * m.cpu_ratio * TIMER_HZ / 1e6
+            last_title, last_player_time = now, m.player_seconds
+            win.set_title(f'K-PEX - {100 * speed:.0f}% speed, {mips:.1f} MIPS, '
+                          f'player time {m.player_seconds:.0f} s'
                           f'{"  [HOLD]" if hold else ""}')
     win.close()
 

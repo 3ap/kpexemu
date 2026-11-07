@@ -61,6 +61,8 @@ def main():
     ap.add_argument('--disk', default='disk.img')
     ap.add_argument('--scale', type=int, default=3)
     ap.add_argument('--verbose', action='store_true', help='print the peripheral log')
+    ap.add_argument('--core', choices=('python', 'unicorn'), default='python',
+                    help='CPU core: our Python interpreter or Unicorn Engine (JIT, needs `pip install unicorn` and a C compiler)')
     ap.add_argument('--sync-folder', metavar='DIR',
                     help='keep the player files in this folder: copied to the disk on start, back on exit')
     ap.add_argument('--max-instructions', type=lambda v: int(float(v)), metavar='N',
@@ -68,7 +70,7 @@ def main():
     args = ap.parse_args()
 
     imported = fat16.import_folder(args.disk, args.sync_folder) if args.sync_folder else None
-    m = Machine(args.rom, disk_path=args.disk, log=print if args.verbose else (lambda s: None))
+    m = Machine(args.rom, disk_path=args.disk, log=print if args.verbose else (lambda s: None), core=args.core)
     try:
         run_window(m, args)
     finally:

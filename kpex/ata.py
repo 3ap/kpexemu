@@ -29,6 +29,10 @@ BSY, DRDY, DF, DSC, DRQ, ERR = 0x80, 0x40, 0x20, 0x10, 0x08, 0x01
 
 class ATADisk(Region):
     name = 'ata'
+    # 16-bit reads of the data register (+0x00) may be served by a native CPU
+    # core straight from the buffer; it then sets `stream` (kpex/native).
+    fast_read_port = (0x1F, 0x00)
+    stream = None
 
     def __init__(self, machine, path, size_mb=512):
         self.machine = machine
@@ -107,6 +111,8 @@ class ATADisk(Region):
                 self.log(f'command {cmd:#04x} (accepted, no action), pc~{self.machine.cpu.next_pc:#010x}')
 
     def start_read(self, data):
+        if self.stream is not None:
+            data = self.stream.load(data)
         self.buffer = data
         self.pos = 0
         self.status = DRDY | DSC | DRQ
@@ -134,10 +140,15 @@ class ATADisk(Region):
     # --- data ---------------------------------------------------------------
 
     def read_data(self):
+        stream = self.stream
+        if stream is not None:
+            self.pos = stream.pos   # the native core may have read ahead of us
         if self.pos >= len(self.buffer):
             return 0
         val = self.buffer[self.pos] | (self.buffer[self.pos + 1] << 8)
         self.pos += 2
+        if stream is not None:
+            stream.pos = self.pos
         if self.pos >= len(self.buffer):
             self.status = DRDY | DSC
         return val

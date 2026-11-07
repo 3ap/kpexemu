@@ -26,6 +26,9 @@ PANEL_W, PANEL_H = 176, 220
 
 class LCD(Region):
     name = 'lcd'
+    # Writes have no effect the CPU can see right away: a native CPU core may
+    # queue them and hand them over in bulk (kpex/native).
+    fast_writes = True
     DEVICE_CODE = 0x8309
 
     def __init__(self, machine):

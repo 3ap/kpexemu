@@ -7,6 +7,8 @@ The host running the emulator is assumed to be little-endian (x86, ARM), like
 the player itself: then words in a bytearray can be read directly.
 """
 
+import mmap
+
 PAGE_SHIFT = 20
 
 
@@ -49,8 +51,16 @@ class RAM(Region):
         self.size = size
         self.mask = size - 1
         self.readonly = readonly
-        self.data = bytearray(size)
+        # Anonymous mmap instead of bytearray: its memory never moves, so a
+        # native CPU core (Unicorn) can work on the same bytes directly.
+        self.data = mmap.mmap(-1, size)
         self._remap()
+
+    @property
+    def address(self):
+        """Host address of the memory (for the native CPU core)."""
+        import ctypes
+        return ctypes.addressof(ctypes.c_char.from_buffer(self.data))
 
     def _remap(self):
         mv = memoryview(self.data)

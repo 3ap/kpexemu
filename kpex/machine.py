@@ -35,10 +35,14 @@ def parse_rom_header(data):
 
 
 class Machine:
-    def __init__(self, rom_path, disk_path='disk.img', log=print):
+    def __init__(self, rom_path, disk_path='disk.img', log=print, core='python'):
         self.log = log
         self.bus = Bus(log=log)
-        self.cpu = CPU(self.bus)
+        if core == 'unicorn':
+            from .ucpu import UnicornCPU
+            self.cpu = UnicornCPU(self.bus)
+        else:
+            self.cpu = CPU(self.bus)
         self.bus.cpu = self.cpu
 
         rom = open(rom_path, 'rb').read()
@@ -71,6 +75,8 @@ class Machine:
         # Areas we know nothing about yet: accesses to them show up in the log.
         for base, name in ((0x30000000, 'cs30'), (0x60000000, 'cs60')):
             bus.map(base, 1 << 20, P.Unknown(self, name))
+        if hasattr(self.cpu, 'attach'):
+            self.cpu.attach()   # the native core copies the memory map
 
         self.reset()
 

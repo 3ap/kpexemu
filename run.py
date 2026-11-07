@@ -21,9 +21,11 @@ def main():
     ap.add_argument('--profile', action='store_true',
                     help='at the end, show the addresses where the CPU spends most time')
     ap.add_argument('--screenshot', help='at the end, save the player screen to a PNG')
+    ap.add_argument('--core', choices=('python', 'unicorn'), default='python',
+                    help='CPU core: our Python interpreter or Unicorn Engine (JIT)')
     args = ap.parse_args()
 
-    m = Machine(args.rom)
+    m = Machine(args.rom, core=args.core)
     info = m.rom_info
     print(f'Firmware {info["version"]}, parts: {len(info["parts"])}')
     for p in info['parts']:

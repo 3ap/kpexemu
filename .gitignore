@@ -4,6 +4,7 @@
 !*/
 !.gitignore
 !*.py
+!*.c
 !*.md
 !docs/**
 !.github/**

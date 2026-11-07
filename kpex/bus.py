@@ -4,10 +4,10 @@ The address space (4 GB) is split into 1 MB pages. Each page points to the
 device (`Region`) responsible for it. The device gets the offset from its start.
 
 The host running the emulator is assumed to be little-endian (x86, ARM), like
-the player itself: then words in a bytearray can be read directly.
+the player itself: then words in memory can be read directly.
 """
 
-import mmap
+from array import array
 
 PAGE_SHIFT = 20
 
@@ -43,7 +43,12 @@ class Region:
 
 class RAM(Region):
     """Plain memory. The size must be a power of two: addresses past the end
-    wrap around to the start, as often happens on real hardware."""
+    wrap around to the start, as often happens on real hardware.
+
+    The memory is an array of 32-bit words: PyPy compiles indexing an
+    array('I') into a plain load, while a memoryview.cast('I') is ~35 times
+    slower. 16- and 8-bit accesses work on the containing word. The array
+    never moves, so a native CPU core (Unicorn) can share it by address."""
 
     def __init__(self, name, size, readonly=False):
         assert size & (size - 1) == 0, 'size must be a power of two'
@@ -51,21 +56,18 @@ class RAM(Region):
         self.size = size
         self.mask = size - 1
         self.readonly = readonly
-        # Anonymous mmap instead of bytearray: its memory never moves, so a
-        # native CPU core (Unicorn) can work on the same bytes directly.
-        self.data = mmap.mmap(-1, size)
-        self._remap()
+        self.m32 = array('I', bytes(size))
+        assert self.m32.itemsize == 4
 
     @property
     def address(self):
         """Host address of the memory (for the native CPU core)."""
-        import ctypes
-        return ctypes.addressof(ctypes.c_char.from_buffer(self.data))
+        return self.m32.buffer_info()[0]
 
-    def _remap(self):
-        mv = memoryview(self.data)
-        self.m32 = mv.cast('I')
-        self.m16 = mv.cast('H')
+    @property
+    def data(self):
+        """The memory as bytes (slow; for loading and inspection)."""
+        return memoryview(self.m32).cast('B')
 
     def load(self, offset, blob):
         self.data[offset:offset + len(blob)] = blob
@@ -74,10 +76,12 @@ class RAM(Region):
         return self.m32[(off & self.mask) >> 2]
 
     def read16(self, off):
-        return self.m16[(off & self.mask) >> 1]
+        off &= self.mask
+        return (self.m32[off >> 2] >> ((off & 2) << 3)) & 0xFFFF
 
     def read8(self, off):
-        return self.data[off & self.mask]
+        off &= self.mask
+        return (self.m32[off >> 2] >> ((off & 3) << 3)) & 0xFF
 
     def write32(self, off, val):
         if not self.readonly:
@@ -85,11 +89,17 @@ class RAM(Region):
 
     def write16(self, off, val):
         if not self.readonly:
-            self.m16[(off & self.mask) >> 1] = val
+            off &= self.mask
+            i, shift = off >> 2, (off & 2) << 3
+            m = self.m32
+            m[i] = (m[i] & ~(0xFFFF << shift) & 0xFFFFFFFF) | ((val & 0xFFFF) << shift)
 
     def write8(self, off, val):
         if not self.readonly:
-            self.data[off & self.mask] = val
+            off &= self.mask
+            i, shift = off >> 2, (off & 3) << 3
+            m = self.m32
+            m[i] = (m[i] & ~(0xFF << shift) & 0xFFFFFFFF) | ((val & 0xFF) << shift)
 
 
 class Bus:

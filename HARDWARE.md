@@ -51,6 +51,7 @@ The addresses match TCC77x in Rockbox.
 
 | Offset | Block |
 |---|---|
+| `0x000` | DAI (I2S to the codec): DADI/DADO samples, DAMR `+0x40` (bit 15 on, 14 transmit, 13 receive) |
 | `0x100` | interrupt controller (IEN, CREQ, IREQ, IRQSEL...) |
 | `0x200` | timers; timer 0 drives the system tick (interrupt bit 6) |
 | `0x300` | GPIO A-E (data, direction, function) |
@@ -58,6 +59,15 @@ The addresses match TCC77x in Rockbox.
 | `0xA00` | 10-bit ADC (start: channel number to `+0x00`/`+0x80`; result at `+0x84`, bits 26:24 = ready) |
 | `0xA10` | "bit length" of a number (`0xB1` -> 8) |
 | `0xD00` | USB host, OHCI (interrupt bit 10) |
+
+**Sound output.** Audio goes out through an FIQ: the transmit interrupt I2ST
+(bit 5, routed to FIQ by IRQSEL) asks for samples, and the handler at SRAM
+`0x40` writes 4 stereo samples to DADO_L/R(0..3) from a ring buffer (zeros if
+it is empty), then acknowledges with CREQ = `0x30`. The firmware turns the DAI
+transmitter on (DAMR `0xE20` -> `0xCE20`) when entering GAME, and games wait for
+their sounds to finish: without these interrupts Battle Armor stops on the
+second logo. The emulator raises I2ST at 44.1 kHz / 4 (the real rate is not
+decoded) and discards the samples.
 
 **Anti-clone check.** The firmware writes a number to `0x80000A10` and checks
 the answer. If it is wrong, it corrupts an OS kernel variable and tasks stop
@@ -126,5 +136,5 @@ codec are probably on it.
 
 ## Not emulated yet
 
-Sound (I2S/DAI interface and WM8750 codec), the clock, FM receiver, USB device,
+Sound playback (samples are dropped; the WM8750 codec is not emulated), the clock, FM receiver, USB device,
 exact timer frequencies.

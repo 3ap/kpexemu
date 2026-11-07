@@ -345,12 +345,72 @@ class OHCI:
             self.regs[off] = val
 
 
+class DAI:
+    """Digital audio interface (0x80000000): I2S to the audio codec.
+
+        +0x00..0x1C  DADI_L/R(0..3) - received samples
+        +0x20..0x3C  DADO_L/R(0..3) - samples to send
+        +0x40        DAMR - mode: bit 15 DAI on, bit 14 transmitter on,
+                     bit 13 receiver on
+        +0x44        DAVC - volume
+
+    Sound is not played yet. But the firmware waits for the sound it
+    starts (games do, before the title screen), so we raise the transmit
+    interrupt I2ST at the pace of real playback: the firmware's FIQ handler
+    writes 4 stereo samples to DADO per interrupt. The sample rate is a guess:
+    the DAI clock dividers are not decoded yet."""
+
+    SAMPLE_RATE = 44100
+    SAMPLES_PER_IRQ = 4
+    I2ST = 5            # interrupt bit (I2SR, receive, is bit 4)
+    MAX_LAG = 8         # interrupts; if we fall further behind, skip ahead
+
+    def __init__(self, machine):
+        self.machine = machine
+        self.damr = 0
+        self.next_at = None     # cpu.cycles of the next interrupt
+
+    @property
+    def transmitting(self):
+        return self.damr & 0xC000 == 0xC000
+
+    def interval(self):
+        return self.machine.instructions_per_second * self.SAMPLES_PER_IRQ / self.SAMPLE_RATE
+
+    def write_mode(self, val):
+        self.damr = val
+        if not self.transmitting:
+            self.next_at = None
+        elif self.next_at is None:
+            self.next_at = self.machine.cpu.cycles + self.interval()
+
+    def until_due(self):
+        """Instructions until the next interrupt, or None."""
+        if self.next_at is None:
+            return None
+        return max(1, int(self.next_at - self.machine.cpu.cycles + 0.999))
+
+    def tick(self):
+        if self.next_at is None:
+            return
+        now = self.machine.cpu.cycles
+        if now < self.next_at:
+            return
+        step = self.interval()
+        if now - self.next_at > self.MAX_LAG * step:
+            self.next_at = now
+        self.machine.intc.raise_irq(self.I2ST)
+        while self.next_at <= now:
+            self.next_at += step
+
+
 class SystemRegs(RegisterBlock):
     """Registers at 0x80000000..0x800FFFFF: audio interface, interrupts,
     timers, GPIO, clocks, ADC, ECC and more."""
 
     name = 'sys'
     names = {
+        0x40: 'DAMR', 0x44: 'DAVC',
         0x100: 'IEN', 0x104: 'CREQ', 0x108: 'IREQ', 0x10C: 'IRQSEL', 0x110: 'ICFG',
         0x114: 'MREQ', 0x120: 'IRQ', 0x124: 'FIQ',
         0x300: 'GPIOA', 0x304: 'GPIOA_DIR', 0x308: 'GPIOA_FN',
@@ -376,11 +436,14 @@ class SystemRegs(RegisterBlock):
         super().__init__(machine)
         self.intc = machine.intc
         self.timers = machine.timers
+        self.dai = machine.dai
         self.adc = machine.adc
         self.gpio = machine.gpio
         self.ohci = OHCI()
 
     def read_reg(self, off):
+        if off == 0x40:
+            return self.dai.damr
         if 0x100 <= off < 0x140:
             return self.intc.read(off - 0x100)
         if 0x200 <= off < 0x2A0:
@@ -402,6 +465,9 @@ class SystemRegs(RegisterBlock):
         return NotImplemented
 
     def write_reg(self, off, val):
+        if off == 0x40:
+            self.note('w', off, val)
+            return self.dai.write_mode(val)
         if 0x100 <= off < 0x140:
             self.note('w', off, val)
             return self.intc.write(off - 0x100, val)

@@ -63,6 +63,8 @@ class Machine:
         self.timers = P.Timers(self)
         self.timers.TICK_CYCLES = cpu_ratio
         self.cpu_ratio = cpu_ratio
+        self.instructions_per_second = cpu_ratio * TIMER_HZ   # of player time
+        self.dai = P.DAI(self)
         self.adc = P.ADC()
         self.gpio = P.GPIO()
         self.powered_off = None   # reason, if the firmware cut the power
@@ -113,10 +115,15 @@ class Machine:
         while done < instructions:
             if self.powered_off:
                 break
-            n = cpu.run(min(slice_size, instructions - done))
+            step = min(slice_size, instructions - done)
+            due = self.dai.until_due()
+            if due is not None and due < step:
+                step = due      # end the slice right when the audio interrupt is due
+            n = cpu.run(step)
             if n == 0:  # the CPU waits for an interrupt: just let time pass
-                n = slice_size
+                n = step
                 cpu.cycles += n
             self.timers.tick(n)
+            self.dai.tick()
             done += n
         return done
